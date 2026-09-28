@@ -27,7 +27,56 @@ async function verifyBio(){try{let id=Uint8Array.from(atob(localStorage.getItem(
 $$('[data-route]').forEach(b=>b.onclick=()=>openRoute(b.dataset.route));$('#back').onclick=closeRoute;$('#shade').onclick=closeSheet;$('#cancel').onclick=()=>$('#process').classList.remove('open');
 let voiceRaf,started,completed,recognition;
 function listen(){if(settings.muted)return toast('Micrófono silenciado');voice.classList.add('listening');$('#voiceStatus').textContent='ESCUCHANDO…';$('#voiceHint').textContent='Habla ahora';haptic();const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Speech){setTimeout(()=>processVoice('Reconocimiento no disponible en este navegador'),1500);return}recognition=new Speech();recognition.lang='es-ES';recognition.interimResults=false;recognition.continuous=false;recognition.maxAlternatives=1;recognition.onresult=e=>processVoice(e.results[0][0].transcript);recognition.onerror=e=>{voice.classList.remove('listening');apply();toast(e.error==='not-allowed'?'Permiso de micrófono denegado':'No se pudo reconocer la voz')};recognition.onend=()=>{if(voice.classList.contains('listening')){voice.classList.remove('listening');apply()}};try{recognition.start()}catch{voice.classList.remove('listening');apply();toast('El micrófono ya está activo')}}
-function processVoice(transcript){voice.classList.remove('listening');voice.classList.add('processing');$('#voiceStatus').textContent='PROCESANDO…';$('#voiceHint').textContent=transcript;setTimeout(()=>{voice.classList.remove('processing');apply();speechSynthesis.speak(new SpeechSynthesisUtterance('Te he escuchado'))},1300)}
+async function processVoice(transcript){
+  voice.classList.remove('listening');
+  voice.classList.add('processing');
+  $('#voiceStatus').textContent='PROCESANDO…';
+  $('#voiceHint').textContent=transcript;
+
+  try{
+    const response=await fetch('https://visty-brain.lovipabs.workers.dev',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({texto:transcript})
+    });
+
+    const data=await response.json();
+
+    if(!response.ok || !data.respuesta){
+      throw new Error(data.error || 'Error de V.I.S.T.Y.');
+    }
+
+    voice.classList.remove('processing');
+    apply();
+
+    speechSynthesis.cancel();
+
+    const frase=new SpeechSynthesisUtterance(data.respuesta);
+    frase.lang='es-ES';
+    frase.rate=1;
+    frase.pitch=1;
+    frase.volume=settings.volume/100;
+
+    speechSynthesis.speak(frase);
+
+  }catch(error){
+    console.error('V.I.S.T.Y.:',error);
+
+    voice.classList.remove('processing');
+    apply();
+
+    speechSynthesis.cancel();
+
+    const frase=new SpeechSynthesisUtterance(
+      'Ahora mismo no puedo conectar con mi sistema de conversación.'
+    );
+
+    frase.lang='es-ES';
+    frase.volume=settings.volume/100;
+
+    speechSynthesis.speak(frase);
+  }
+}
 voice.onpointerdown=e=>{e.preventDefault();completed=false;started=performance.now();const tick=t=>{let p=Math.min(100,(t-started)/3000*100);voice.style.setProperty('--hold',p);if(p>=100){completed=true;settings.muted=!settings.muted;save();voice.classList.add('processing');haptic([30,25,40]);setTimeout(()=>voice.classList.remove('processing'),500)}else voiceRaf=requestAnimationFrame(tick)};voiceRaf=requestAnimationFrame(tick)};
 voice.onpointerup=()=>{let elapsed=performance.now()-started;cancelAnimationFrame(voiceRaf);voice.style.setProperty('--hold',0);if(completed)return;if(elapsed<=500)listen();else toast('Pulsación cancelada')};voice.onpointercancel=()=>{cancelAnimationFrame(voiceRaf);voice.style.setProperty('--hold',0)};document.addEventListener('contextmenu',e=>{if(e.target.closest('.voice,.hold'))e.preventDefault()});
 apply();if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
